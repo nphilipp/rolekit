@@ -36,6 +36,7 @@ from rolekit.dbus_utils import SystemdJobHandler
 from rolekit.logger import log
 from rolekit.server.rolebase import RoleBase
 from rolekit.server.rolebase import RoleDeploymentValues
+from rolekit.server.rolesettings import RoleSetting, UNLIMITED
 from rolekit import async
 from rolekit.errors import COMMAND_FAILED
 from rolekit.errors import INVALID_PROPERTY, INVALID_SETTING, INVALID_VALUE
@@ -124,50 +125,41 @@ BUGS: Much too unwieldy."""
 
 
 class Role(RoleBase):
-    # Use _DEFAULTS from RoleBase and overwrite settings or add new if needed.
-    # Without overwrites or new settings, this can be omitted.
-    _DEFAULTS = dict(RoleBase._DEFAULTS, **{
-        "version": 1,
-        "services": [ "postgresql.service" ],
-        "packages": [ "postgresql-server",
-                      "postgresql-contrib",
-                      "python3-psycopg2" ], # Needed for role deployment
-        "firewall": { "ports": [],
-                      "services": [ "postgresql" ] },
 
-        # Database to create
-        "database": None, # Mandatory
+    # these properties/settings are defined in RoleBase
+    version = 1
+    services = ["postgresql.service"]
+    # python3-psycopg2 is needed for role deployment
+    packages = ["postgresql-server", "postgresql-contrib", "python3-psycopg2"]
+    firewall = {'services': ["postgresql"]}
 
-        # Name of the database owner
-        "owner": None,  # Defaults to db_owner
+    # properties/settings specific to this role
+    database = RoleSetting(type=str, help="Name of the database to create")
+    owner = RoleSetting(
+        type=str, default="db_owner",
+        help="Name of the database owner")
+    password = RoleSetting(
+        type=str, default=generate_password, sensitive=True,
+        help="Password for the database owner")
+    postgresql_conf = RoleSetting(
+        type=str, default="/var/lib/pgsql/data/postgresql.conf",
+        constraint=lambda x: x == os.path.abspath(os.path.normpath(x)),
+        help="Path to the PostgreSQL server configuration file")
+    pg_hba_conf = RoleSetting(
+        type=str, default="/var/lib/pgsql/data/pg_hba.conf",
+        constraint=lambda x: x == os.path.abspath(os.path.normpath(x)),
+        help="Path to the PostgreSQL host based access configuration file")
 
-        # Password for the database owner
-        "password": None, # Auto-generated if unspecified
+    max_instances = UNLIMITED
 
-        # Paths to configuration files
-        "postgresql_conf": "/var/lib/pgsql/data/postgresql.conf",
-        "pg_hba_conf": "/var/lib/pgsql/data/pg_hba.conf"
-    })
-
-    # Use _READONLY_SETTINGS from RoleBase and add new if needed.
-    # Without new readonly settings, this can be omitted.
-#    _READONLY_SETTINGS = RoleBase._READONLY_SETTINGS + [
-#        "myownsetting"
-#    ]
-
-    # maximum number of instances of this role
-    # We'll pick an arbitrarily large number. It's
-    # unlikely that any system will ever have so many
-    _MAX_INSTANCES = 1000
-
-
-    # Initialize role
-    def __init__(self, name, directory, *args, **kwargs):
-        super(Role, self).__init__(name, directory, *args, **kwargs)
-
+    # Parent constructor is called implicitly, it's unnecessary to define one
+    # here unless it is extended.
+    # def __init__(self, name, directory, *args, **kwargs):
+    #     super(Role, self).__init__(name, directory, *args, **kwargs)
+    #     ...
 
     # Deploy code
-    def do_deploy_async(self, values, sender=None):
+    def do_deploy_async(self, sender=None):
         log.debug9("TRACE do_deploy_async(databaseserver)")
         # Do the magic
         #
