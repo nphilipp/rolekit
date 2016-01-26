@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2010-2012 Red Hat, Inc.
+# Copyright (C) 2010-2012, 2016 Red Hat, Inc.
 #
 # Authors:
 # Thomas Woerner <twoerner@redhat.com>
+# Nils Philippsen <nils@redhat.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -41,6 +42,9 @@ from rolekit.config.dbus import DBUS_INTERFACE_ROLE_INSTANCE, PK_ACTION_ALL
 from rolekit.logger import log
 from rolekit.server.decorators import dbus_handle_exceptions
 from rolekit.server.decorators import dbus_service_method
+from rolekit.server.rolesettings import RoleSettingsMixin, RoleSettingList
+from rolekit.server.rolesettings import RoleSetting, RoleSettingGroup
+from rolekit.server.rolesettings import IPPortRange
 from rolekit.server.io.systemd import enable_units
 from rolekit.server.io.systemd import disable_units
 from rolekit.server.io.systemd import SystemdUnitParser
@@ -58,36 +62,41 @@ from rolekit.util import get_target_unit_name
 from firewall.client import FirewallClient
 from firewall.functions import getPortRange
 
+
 ############################################################################
 #
 # class RoleBase
 #
 ############################################################################
 
-class RoleBase(slip.dbus.service.Object):
+class RoleBase(RoleSettingsMixin, slip.dbus.service.Object):
     """Role Instance class"""
 
-    _DEFAULTS = {
-        "version": 0,
-        "services": [ ],
-        "packages": [ ],
-        "firewall": { "ports": [ ], "services": [ ] },
-        "firewall_zones": [ ],
-        "custom_firewall": False,
-#        "backup_paths": [ ]
-    }
-    # last_error is in _settings
+    version = RoleSetting(
+        type=int, default=0, readonly=True,
+        help="Version of the role")
+    services = RoleSettingList(
+        type=str, default=[], readonly=True,
+        help="List of services that must be started for the role")
+    packages = RoleSettingList(
+        type=str, default=[], readonly=True,
+        help="List of packages that must be installed for the role")
+    class firewall(RoleSettingGroup):
+        ports = RoleSettingList(
+            type=IPPortRange, readonly=True,
+            help="List of ports or ranges that need to be opened for the role")
+        services = RoleSettingList(
+            type=str, readonly=True,
+            help="List of services that need to be allowed for the role")
 
-    # properties that can not be changed within a deploy and update call
-    _READONLY_SETTINGS = [
-        "lasterror", "version",
-        "services", "packages", "firewall",
-    ]
+    name = RoleSetting(type=str)
+    type = RoleSetting(type=str, readonly=True)
+    state = RoleSetting(
+        type=str,
+        constraint=lambda x: x in PERSISTENT_STATES + TRANSITIONAL_STATES)
+    lasterror = RoleSetting(type=str)
 
-    _ADDITIONAL_PROPERTIES = [ "name", "type", "state", "lasterror" ]
-
-    # maximum number of instances of this role
-    _MAX_INSTANCES = 1
+    max_instances = RoleSetting(type=int, default=1, readonly=True)
 
     default_polkit_auth_required = PK_ACTION_ALL
     """ Use PK_ACTION_ALL as a default """
